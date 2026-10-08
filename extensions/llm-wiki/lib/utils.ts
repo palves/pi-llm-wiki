@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   existsSync,
   lstatSync,
@@ -8,6 +9,7 @@ import {
   realpathSync,
   renameSync,
   rmdirSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -293,9 +295,41 @@ export function readJson<T>(path: string, defaultValue: T): T {
   }
 }
 
+/**
+ * Write `content` to `path` by filling a temporary file in the same directory
+ * and renaming it over the target.
+ *
+ * `writeFileSync` truncates the target the moment it opens it, so between that
+ * open and the last byte landing, every concurrent reader sees an empty or
+ * partially written file. For the generated projections that is a silent
+ * correctness problem rather than a cosmetic one: `readJson` reports a file it
+ * cannot parse as its default value, so a reader that lands in the window gets
+ * "this store is empty" instead of an error. The rename stays inside one
+ * directory, because renaming across filesystems is not atomic.
+ *
+ * The temp name carries the pid and a random suffix so concurrent writers in
+ * the same process cannot collide with each other.  If the write or the rename
+ * fails, the temp file is removed rather than left behind next to the data.
+ */
+export function atomicWriteFile(path: string, content: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
+  try {
+    writeFileSync(temporary, content, "utf8");
+    renameSync(temporary, path);
+  } catch (error) {
+    try {
+      unlinkSync(temporary);
+    } catch {
+      // The temp file was never created, or something else already removed it.
+    }
+    throw error;
+  }
+}
+
 /** Write JSON file atomically. */
 export function writeJson(path: string, data: unknown): void {
-  writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
+  atomicWriteFile(path, `${JSON.stringify(data, null, 2)}\n`);
 }
 
 /** Read text file or return empty string. */
