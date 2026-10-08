@@ -1,11 +1,9 @@
-import { randomUUID } from "node:crypto";
 import {
   existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
-  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -16,7 +14,7 @@ import {
   buildWikilinkIndex,
   type WikilinkIndex,
 } from "./knowledge-links.js";
-import { isPathWithin, readJson, type VaultPaths } from "./utils.js";
+import { atomicWriteFile, isPathWithin, readJson, type VaultPaths } from "./utils.js";
 import {
   assertWritableVault,
   compareCodePoint,
@@ -354,14 +352,6 @@ export function appendEvent(paths: VaultPaths, event: Omit<WikiEvent, "timestamp
   const eventsPath = join(paths.meta, "events.jsonl");
   const line = JSON.stringify({ ...details, timestamp: new Date().toISOString(), kind });
   writeFileSync(eventsPath, `${line}\n`, { flag: "a", encoding: "utf-8" });
-}
-
-/** Atomic write: temp file + rename. */
-function atomicWriteFile(path: string, content: string): void {
-  mkdirSync(dirname(path), { recursive: true });
-  const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
-  writeFileSync(temporary, content, "utf8");
-  renameSync(temporary, path);
 }
 
 type EventSourceRead =

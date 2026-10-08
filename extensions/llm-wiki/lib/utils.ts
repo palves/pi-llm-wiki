@@ -310,6 +310,13 @@ export function readJson<T>(path: string, defaultValue: T): T {
  * The temp name carries the pid and a random suffix so concurrent writers in
  * the same process cannot collide with each other.  If the write or the rename
  * fails, the temp file is removed rather than left behind next to the data.
+ *
+ * This is atomicity, not durability.  The bytes are not fsynced, so a power
+ * loss can still take the newest version.  A writer that must survive one also
+ * fsyncs the file and its directory and creates the temp exclusively, as those
+ * extra steps are its whole purpose.  `durableWriteNew` in `legacy-repair.ts`
+ * is that writer, and it is deliberately kept separate rather than folded in
+ * here.
  */
 export function atomicWriteFile(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true });
