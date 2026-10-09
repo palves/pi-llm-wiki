@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { type Document, isAlias, isMap, isScalar, isSeq, parseAllDocuments, stringify } from "yaml";
+import { atomicWriteFile } from "./utils.js";
 
 export const FRONTMATTER_MAX_BYTES = 128 * 1024;
 export const FRONTMATTER_MAX_DEPTH = 32;
@@ -695,5 +696,7 @@ export function readKnowledgeDocumentFile(path: string, id: string): ParseKnowle
 
 export function writeKnowledgeDocumentFile(path: string, document: KnowledgeDocument): void {
   const content = serializeKnowledgeDocument(document);
-  writeFileSync(path, content, "utf8");
+  // Pages are read as authoritative while they are being replaced -- recall parses
+  // them for retrieval -- so the bytes go in by rename rather than in place.
+  atomicWriteFile(path, content);
 }
