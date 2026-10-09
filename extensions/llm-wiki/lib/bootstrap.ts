@@ -1,9 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { KnowledgeDiagnostic } from "./knowledge-document.js";
 import { appendEvent, type ProjectionResult, rebuildMetadata } from "./metadata.js";
-import { ensureVaultStructure, fmtDate, type VaultPaths, writeJson } from "./utils.js";
+import {
+  atomicWriteFile,
+  ensureVaultStructure,
+  fmtDate,
+  type VaultPaths,
+  writeJson,
+} from "./utils.js";
 import { inspectWritableVault, readVaultConfig } from "./vault-format.js";
 
 export const WIKI_SCHEMA = [
@@ -83,7 +89,7 @@ export function bootstrapVault(paths: VaultPaths, input: BootstrapInput): Bootst
 
   ensureVaultStructure(paths);
   writeJson(configPath, config);
-  writeFileSync(join(paths.dotWiki, "WIKI_SCHEMA.md"), WIKI_SCHEMA, "utf8");
+  atomicWriteFile(join(paths.dotWiki, "WIKI_SCHEMA.md"), WIKI_SCHEMA);
   appendEvent(paths, { kind: "bootstrap", topic: input.topic, mode: input.mode });
   return { ok: true, created, projection: rebuildMetadata(paths) };
 }

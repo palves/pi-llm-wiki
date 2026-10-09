@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { copyFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { createKnowledgeDocument, serializeKnowledgeDocument } from "./knowledge-document.js";
@@ -11,6 +11,7 @@ import {
   fileExtractorFor,
 } from "./source-extractors.js";
 import {
+  atomicWriteFile,
   type ExecApi,
   exec,
   fmtDate,
@@ -190,11 +191,11 @@ function finalizeCapture(
     ...(content.content_type ? { content_type: content.content_type } : {}),
   };
 
-  writeFileSync(join(packet.packetPath, "extracted.md"), extracted, "utf-8");
+  atomicWriteFile(join(packet.packetPath, "extracted.md"), extracted);
   writeJson(join(packet.packetPath, "manifest.json"), manifest);
 
   const sourcePagePath = join(paths.wiki, "sources", `${packet.sourceId}.md`);
-  writeFileSync(sourcePagePath, buildSourcePageSkeleton(manifest, extracted), "utf-8");
+  atomicWriteFile(sourcePagePath, buildSourcePageSkeleton(manifest, extracted));
 
   appendEvent(paths, {
     kind: "capture",
@@ -220,7 +221,7 @@ async function preserveFileOriginal(
     await copyFile(filePath, join(packetPath, "original", fileName));
   } catch {
     // If copying fails, preserve whatever text content was available.
-    writeFileSync(join(packetPath, "original", fileName), fallbackContent, "utf-8");
+    atomicWriteFile(join(packetPath, "original", fileName), fallbackContent);
   }
 }
 
