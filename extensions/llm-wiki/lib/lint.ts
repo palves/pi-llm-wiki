@@ -5,7 +5,7 @@ import { buildResolvedBacklinks, buildWikilinkIndex } from "./knowledge-links.js
 import { repairLegacyKnowledgeDocuments } from "./legacy-repair.js";
 import { appendEvent, rebuildMetadata, rebuildMetadataLight } from "./metadata.js";
 import { readQmdIndexStatus } from "./qmd-indexing.js";
-import { fmtDate, slugify, type VaultPaths, writeJson } from "./utils.js";
+import { atomicWriteFile, fmtDate, slugify, type VaultPaths, writeJson } from "./utils.js";
 import {
   assertWritableVault,
   compareCodePoint,
@@ -165,7 +165,7 @@ export async function runWikiLint(paths: VaultPaths, autoFix: boolean): Promise<
   });
   if (autoFix && reportPath) {
     mkdirSync(paths.outputs, { recursive: true });
-    writeFileSync(reportPath, `${reportLines.join("\n")}\n`, "utf8");
+    atomicWriteFile(reportPath, `${reportLines.join("\n")}\n`);
     appendEvent(paths, {
       kind: "lint",
       orphans,

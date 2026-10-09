@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { appendEvent, rebuildMetadataLight } from "./metadata.js";
 import { searchWikiLayered } from "./recall.js";
 import {
+  atomicWriteFile,
   fmtDate,
   nextTrajectoryId,
   readJson,
@@ -269,7 +270,7 @@ export function captureTrajectory(
   });
 
   // Self-contained, human/LLM-readable summary — no skeleton to flesh later.
-  writeFileSync(join(packetPath, "extracted.md"), buildTrajectoryReadme(packet, title), "utf-8");
+  atomicWriteFile(join(packetPath, "extracted.md"), buildTrajectoryReadme(packet, title));
 
   appendEvent(paths, {
     kind: "capture_trajectory",

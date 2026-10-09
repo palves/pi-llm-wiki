@@ -1,5 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
 import {
   detectHost,
@@ -10,6 +9,7 @@ import {
   resolveProjectSettingsPath,
 } from "./host.js";
 import type { WikilinkValidationMode } from "./knowledge-links.js";
+import { writeJson } from "./utils.js";
 
 /**
  * Configuration for the background-task lane (issue #64, part of #63).
@@ -434,8 +434,7 @@ function updateGlobalSection(mutate: (section: Record<string, unknown>) => void)
   mutate(section);
   raw[SETTINGS_KEY] = section;
 
-  mkdirSync(dirname(settingsPath), { recursive: true });
-  writeFileSync(settingsPath, `${JSON.stringify(raw, null, 2)}\n`, "utf-8");
+  writeJson(settingsPath, raw);
 }
 
 /**
@@ -460,8 +459,7 @@ function updateProjectSection(
   mutate(section);
   raw[SETTINGS_KEY] = section;
 
-  mkdirSync(dirname(settingsPath), { recursive: true });
-  writeFileSync(settingsPath, `${JSON.stringify(raw, null, 2)}\n`, "utf-8");
+  writeJson(settingsPath, raw);
 }
 
 /**
