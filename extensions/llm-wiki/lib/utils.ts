@@ -157,15 +157,32 @@ export function isPersonalVault(paths: VaultPaths): boolean {
  * project has none.
  *
  * Priority:
- * 1. cwd has `.llm-wiki/` (or legacy `.wiki/`) → project wiki (explicit)
- * 2. `WIKI_HOME` → user-selected root, explicit enough to count as the project's
- * 3. Walk up from cwd → parent project wiki (monorepo / nested workspace)
+ * 1. `WIKI_ROOT` → pinned by the embedding host, above everything else
+ * 2. cwd has `.llm-wiki/` (or legacy `.wiki/`) → project wiki (explicit)
+ * 3. `WIKI_HOME` → user-selected root, explicit enough to count as the project's
+ * 4. Walk up from cwd → parent project wiki (monorepo / nested workspace)
+ *
+ * A pin names the vault a session writes to when the host decided that in
+ * advance, which is why it outranks a vault found in the working directory: the
+ * host's decision is the more specific statement about this session. The MCP
+ * server takes the same variable for the same purpose, so one name covers every
+ * entry point.
+ *
+ * The pin says nothing about which vault is the user's personal one, so
+ * {@link getPersonalWikiRoot} ignores it and layered recall keeps comparing
+ * against the real personal root. It is read on every call rather than captured
+ * at import, so one session's pin cannot be frozen in a module and applied to
+ * the next.
  *
  * Deliberately does NOT fall back to the personal wiki: callers that need the
  * fallback use {@link resolveVaultRoot}, callers that must distinguish "this
  * project has a wiki" from "some wiki exists somewhere" use this.
  */
 export function resolveProjectVaultRoot(cwd: string): string | null {
+  // A whitespace-only value counts as unset, the rule the MCP server applies.
+  const pinned = process.env.WIKI_ROOT?.trim();
+  if (pinned) return pinned;
+
   // A vault rooted at cwd is always the project-local choice.
   if (detectVaultFormat(cwd) !== "none") return cwd;
 
@@ -193,8 +210,8 @@ export function resolveProjectVaultRoot(cwd: string): string | null {
  * Resolve vault root from cwd with personal fallback.
  *
  * Priority:
- * 1-3. {@link resolveProjectVaultRoot}
- * 4. Personal wiki root (`~`, or `WIKI_HOME`) — used whether or not it already
+ * 1-4. {@link resolveProjectVaultRoot}
+ * 5. Personal wiki root (`~`, or `WIKI_HOME`) — used whether or not it already
  *    holds a vault, so first-run bootstrap has somewhere to write.
  */
 export function resolveVaultRoot(cwd: string): string {

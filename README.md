@@ -198,11 +198,12 @@ Knowledge follows you everywhere. pi-llm-wiki uses a layered vault system:
 
 **How it works:**
 
-1. `resolveVaultRoot()` checks: cwd → walk up for `.llm-wiki/` → `~/.llm-wiki/`
+1. `resolveVaultRoot()` checks: `WIKI_ROOT` → cwd → walk up for `.llm-wiki/` → `~/.llm-wiki/`
 2. `wiki_recall` (layered) searches **both** personal and project vaults, merging results with vault labels
 3. Personal results are shown first in recall output, tagged as "📓 personal"
 4. `wiki_retro` writes to whichever vault is active (project takes priority)
 5. Set `WIKI_HOME` env var to override the personal wiki location
+6. Set `WIKI_ROOT` to pin the active vault for one host or one session, above the working directory. The MCP server reads the same variable, and a pin does not change which vault is your personal one
 
 This means: you can have a project wiki for team documentation **and** a personal wiki for your own notes, and recall searches both simultaneously.
 

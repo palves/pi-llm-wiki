@@ -11,10 +11,11 @@ pi-llm-wiki supports multiple vault layers that are searched together:
 
 ### Resolution Order
 
-1. Check current directory for `.llm-wiki/` → use as project wiki
-2. Walk up parent directories looking for `.llm-wiki/` → use as project wiki
-3. Check `WIKI_HOME` env var → use as personal wiki
-4. Fall back to `~/.llm-wiki/` → create if doesn't exist
+1. Check `WIKI_ROOT` env var → use as the vault this session writes to
+2. Check current directory for `.llm-wiki/` → use as project wiki
+3. Walk up parent directories looking for `.llm-wiki/` → use as project wiki
+4. Check `WIKI_HOME` env var → use as personal wiki
+5. Fall back to `~/.llm-wiki/` → create if doesn't exist
 
 This means a project wiki is always preferred when you're inside a project that has one, but your personal wiki is always available as the fallback.
 

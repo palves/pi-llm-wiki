@@ -30,6 +30,7 @@ The personal vault lives at `~/.llm-wiki/` (or `$WIKI_HOME`) and is always avail
 | Variable                      | Default     | Description                                     |
 | ----------------------------- | ----------- | ----------------------------------------------- |
 | `WIKI_HOME`                   | `~/.llm-wiki` | Override the personal wiki vault location     |
+| `WIKI_ROOT`                   | unset         | Pin the active vault, above the working directory |
 | `WIKI_MARKITDOWN_TIMEOUT_MS` | 180000      | Timeout (ms) for MarkItDown PDF/text extraction |
 | `LLM_WIKI_HOST`              | auto        | Force the host layout: `pi` or `omp`            |
 
@@ -96,8 +97,9 @@ Example:
 
 The vault root is resolved in this priority order:
 
-1. **Project vault**: walk up from current directory looking for `.llm-wiki/`
-2. **Personal vault**: fall back to `$WIKI_HOME` or `~/.llm-wiki/`
+1. **Pinned vault**: `$WIKI_ROOT`, when set, names the vault for this host or session
+2. **Project vault**: walk up from current directory looking for `.llm-wiki/`
+3. **Personal vault**: fall back to `$WIKI_HOME` or `~/.llm-wiki/`
 
 This means when you're in a project with its own `.llm-wiki/`, that project wiki is active. When you're outside any project wiki, your personal `~/.llm-wiki/` takes over automatically.
 
