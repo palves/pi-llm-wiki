@@ -960,6 +960,7 @@ export function registerWikiStatus(pi: ExtensionAPI): void {
         `Gaps: ${gaps.gaps?.length || 0}`,
         `Health: ${health}`,
         `Last updated: ${status.lastUpdated || "Never"}`,
+        "Recall store: meta/embeddings.json sidecar. The QMD lines below are an unused lane.",
         `QMD index: ${status.qmd.state}`,
         `QMD documents: ${status.qmd.totalDocuments} (${status.qmd.canonicalDocuments} canonical, ${status.qmd.evidenceDocuments} evidence)`,
         `QMD embeddings pending: ${status.qmd.needsEmbedding}`,
@@ -1138,14 +1139,19 @@ export function registerWikiReindex(pi: ExtensionAPI): void {
     label: "Wiki Reindex QMD",
     description:
       "Rebuild or repair the generated QMD index (meta/qmd) for the vault. " +
-      "Lexical indexing is model-free; selecting vectors may download " +
-      "approximately 2 GB of models on first use. Repair stale/error state. " +
-      "Active recall still uses the legacy heuristic until Phase 3.",
+      "Lexical indexing is model-free. Leaving components unset selects vectors " +
+      "too, which may download approximately 2 GB of models on first use. Repair " +
+      "stale/error state. Active recall does not read this index at all, so " +
+      "rebuilding it does not change recall quality.",
     promptSnippet: "Rebuild the QMD search index",
     promptGuidelines: [
       "Use wiki_reindex to repair a stale, error, or recovering QMD index.",
-      "Lexical-only reindexing never loads a model.",
+      'Lexical-only reindexing never loads a model. Pass components: ["lexical"] ' +
+        "explicitly, since the unset default selects vectors as well.",
       "Vector reindexing may download approximately 2 GB of models on first use.",
+      "wiki_recall reads its own lexical scorer and the meta/embeddings.json " +
+        "sidecar, never the QMD index. A missing QMD index is not a recall " +
+        "deficiency and is not a reason to reindex.",
     ],
     parameters: Type.Object({
       scope: Type.Optional(

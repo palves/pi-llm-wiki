@@ -45,8 +45,10 @@ WIKI_ROOT/
 
 > `meta/qmd/` is extension-owned, generated, and **rebuildable** with `wiki_reindex`. It never
 > scans `wiki/` directly — it indexes parser-valid mirrors. Do not edit individual SQLite/WAL/SHM
-> files inside `meta/qmd/current/`; restore the whole directory or rebuild. Active recall still uses
-> the legacy heuristic until Phase 3.
+> files inside `meta/qmd/current/`; restore the whole directory or rebuild.
+> No recall path reads this index.  `wiki_recall` scores candidates with its own lexical
+> matcher and blends cosine similarity from the `meta/embeddings.json` sidecar, so a
+> missing or unbuilt `meta/qmd/` is not a recall deficiency and not a reason to reindex.
 
 ## Golden Rules
 
