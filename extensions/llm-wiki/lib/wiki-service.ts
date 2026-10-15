@@ -222,6 +222,12 @@ export interface WikiReindexInput {
   force?: boolean;
   vault?: WikiReindexVault;
   signal?: AbortSignal;
+  /**
+   * Session of the conversation asking, so the personal layer of the reindex is the
+   * vault that session is working in rather than whichever vault the process last
+   * pinned. Absent for callers with no session, which reindex the host's own vault.
+   */
+  sessionId?: string;
   onProgress?: (progress: { vault: string; progress: QmdIndexProgress }) => void;
 }
 
@@ -279,7 +285,7 @@ export async function reindexWiki(
   const signal = input.signal;
   const onProgress = input.onProgress;
 
-  const personalPaths = getPersonalWikiPaths();
+  const personalPaths = getPersonalWikiPaths(input.sessionId);
   const activeIsPersonal = isPersonalVault(activePaths);
 
   const targets: Array<{ paths: VaultPaths; label: "active" | "personal" | "project" }> = [];

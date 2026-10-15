@@ -4,7 +4,7 @@ import { scheduleReindex } from "./indexing.js";
 import { rebuildMetadataLight } from "./metadata.js";
 import type { Runtime } from "./runtime.js";
 import type { VaultPaths } from "./utils.js";
-import { isPathWithin, isProtectedPath, resolveVaultPaths } from "./utils.js";
+import { ctxSessionId, isPathWithin, isProtectedPath, resolveVaultPaths } from "./utils.js";
 import { inspectVaultFormat, isGeneratedOkfPath } from "./vault-format.js";
 
 /**
@@ -221,10 +221,10 @@ export function mutationBlockReason(path: string, paths: VaultPaths): string | u
 /** Install guardrails on the extension API. */
 export function installGuardrails(pi: ExtensionAPI, runtime?: Runtime): void {
   // Block direct edits to raw/ and meta/, plus OKF generated projections
-  pi.on("tool_call", async (event) => {
+  pi.on("tool_call", async (event, ctx) => {
     if (isToolCallEventType("write", event)) {
       const path = event.input.path as string;
-      const paths = resolveVaultPaths(process.cwd());
+      const paths = resolveVaultPaths(process.cwd(), ctxSessionId(ctx));
       const reason = mutationBlockReason(path, paths);
       if (reason) return { block: true, reason };
     }
@@ -236,7 +236,7 @@ export function installGuardrails(pi: ExtensionAPI, runtime?: Runtime): void {
         return { block: true, reason: "Cannot determine the files targeted by this edit." };
       }
 
-      const paths = resolveVaultPaths(process.cwd());
+      const paths = resolveVaultPaths(process.cwd(), ctxSessionId(ctx));
       for (const path of targetPaths) {
         const reason = mutationBlockReason(path, paths);
         if (reason) return { block: true, reason };
@@ -245,9 +245,9 @@ export function installGuardrails(pi: ExtensionAPI, runtime?: Runtime): void {
   });
 
   // Track wiki edits for auto-rebuild
-  pi.on("tool_result", async (event) => {
+  pi.on("tool_result", async (event, ctx) => {
     if (event.toolName === "write" || event.toolName === "edit") {
-      const paths = resolveVaultPaths(process.cwd());
+      const paths = resolveVaultPaths(process.cwd(), ctxSessionId(ctx));
       if (hasWikiMutation(event.input, paths.wiki)) {
         pendingRebuild = true;
       }
@@ -261,7 +261,7 @@ export function installGuardrails(pi: ExtensionAPI, runtime?: Runtime): void {
     if (pendingRebuild) {
       pendingRebuild = false;
       try {
-        const paths = resolveVaultPaths(process.cwd());
+        const paths = resolveVaultPaths(process.cwd(), ctxSessionId(ctx));
         // Manual page edits also rebuild off the critical path. Without a
         // runtime (shouldn't happen in normal wiring) fall back to inline.
         if (runtime) {

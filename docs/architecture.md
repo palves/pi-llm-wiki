@@ -11,11 +11,17 @@ pi-llm-wiki supports multiple vault layers that are searched together:
 
 ### Resolution Order
 
-1. Check `WIKI_ROOT` env var → use as the vault this session writes to
-2. Check current directory for `.llm-wiki/` → use as project wiki
-3. Walk up parent directories looking for `.llm-wiki/` → use as project wiki
-4. Check `WIKI_HOME` env var → use as personal wiki
-5. Fall back to `~/.llm-wiki/` → create if doesn't exist
+1. Check `WIKI_SESSION_ROOTS/<session id>` for a `.llm-wiki/` directory → use as the vault for this session
+2. Check `WIKI_ROOT` env var → use as the vault this process writes to
+3. Check current directory for `.llm-wiki/` → use as project wiki
+4. Walk up parent directories looking for `.llm-wiki/` → use as project wiki
+5. Check `WIKI_HOME` env var → use as personal wiki
+6. Fall back to `~/.llm-wiki/` → create if doesn't exist
+
+The first step serves a host that keeps one vault per conversation rather than one per
+process, and it is opt-in. Unset, the sessions in a process share the vault these
+rules select. The id is the one pi reports for the conversation making the call, or the
+one an MCP client is configured to send as `sessionId`.
 
 This means a project wiki is always preferred when you're inside a project that has one, but your personal wiki is always available as the fallback.
 

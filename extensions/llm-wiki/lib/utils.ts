@@ -64,16 +64,59 @@ export function detectVaultFormat(dir: string): VaultFormat {
  * NOTE: Previously this returned `~/.llm-wiki` (the dot-dir itself), which
  * caused `getVaultPaths()` to compose paths like `~/.llm-wiki/.llm-wiki/raw`.
  * See `migrateDoubledPersonalVault()` for the one-shot recovery.
+ *
+ * A session root outranks this one. A session working in a checkout of its own holds
+ * that checkout as its whole wiki, so layered recall compares against it rather than
+ * merging in an unrelated home directory: a second vault here would be somebody
+ * else's state, reached by reading instead of by pinning.
  */
-export function getPersonalWikiRoot(): string {
+/**
+ * The session's own vault root, or null when there is none.
+ *
+ * `WIKI_SESSION_ROOTS` names a directory holding one vault per session, each in a
+ * subdirectory named after the id pi reports for the conversation doing the asking.
+ * Unlike `WIKI_ROOT`, which names one vault for the whole process, this is a claim
+ * about a session, and it is the only honest way to point at a vault when several
+ * sessions share a process: pi runs subagents inside the parent's process, so a
+ * process-wide variable describes whichever of them last set it.
+ *
+ * The directory must already be a vault. The layer that materialises these roots may
+ * not have reached this session yet, and answering with a path that does not exist
+ * would point writes at a bare directory instead of falling back. A missing id, a
+ * missing variable and a missing marker all give the same answer, which is no vault.
+ */
+export function sessionVaultRoot(sessionId?: string): string | null {
+  const base = process.env.WIKI_SESSION_ROOTS?.trim();
+  if (!base || !sessionId) return null;
+  const root = join(base, sessionId);
+  return detectVaultFormat(root) === "none" ? null : root;
+}
+
+/** Session id of the conversation a handler is running for, when pi offered one. */
+export function ctxSessionId(ctx: unknown): string | undefined {
+  const sm = (ctx as { sessionManager?: { getSessionId?: () => string } } | undefined)
+    ?.sessionManager;
+  const get = sm?.getSessionId;
+  if (typeof get !== "function") return undefined;
+  try {
+    const id = get.call(sm);
+    return typeof id === "string" && id.length > 0 ? id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function getPersonalWikiRoot(sessionId?: string): string {
+  const session = sessionVaultRoot(sessionId);
+  if (session) return session;
   const envWiki = process.env.WIKI_HOME;
   if (envWiki) return envWiki;
   return homedir();
 }
 
 /** Get VaultPaths for the personal wiki. */
-export function getPersonalWikiPaths(): VaultPaths {
-  return getVaultPaths(getPersonalWikiRoot());
+export function getPersonalWikiPaths(sessionId?: string): VaultPaths {
+  return getVaultPaths(getPersonalWikiRoot(sessionId));
 }
 
 /**
@@ -138,8 +181,8 @@ export function migrateDoubledPersonalVault(
  * Exact equality, NOT containment: a vault nested under the home directory
  * (`~/projects/foo/.llm-wiki`) is a project vault and must stay one.
  */
-export function isPersonalVault(paths: VaultPaths): boolean {
-  const personalRoot = getPersonalWikiRoot();
+export function isPersonalVault(paths: VaultPaths, sessionId?: string): boolean {
+  const personalRoot = getPersonalWikiRoot(sessionId);
   // Fast path: identical strings need no filesystem syscalls.
   if (paths.root === personalRoot) return true;
   try {
@@ -157,7 +200,9 @@ export function isPersonalVault(paths: VaultPaths): boolean {
  * project has none.
  *
  * Priority:
- * 1. `WIKI_ROOT` → pinned by the embedding host, above everything else
+ * 0. `WIKI_SESSION_ROOTS` + the asking session's id → this session's own vault, above
+ *    everything else, because it is the only pin scoped as narrowly as a session
+ * 1. `WIKI_ROOT` → pinned by the embedding host, above the working directory
  * 2. cwd has `.llm-wiki/` (or legacy `.wiki/`) → project wiki (explicit)
  * 3. `WIKI_HOME` → user-selected root, explicit enough to count as the project's
  * 4. Walk up from cwd → parent project wiki (monorepo / nested workspace)
@@ -178,7 +223,13 @@ export function isPersonalVault(paths: VaultPaths): boolean {
  * fallback use {@link resolveVaultRoot}, callers that must distinguish "this
  * project has a wiki" from "some wiki exists somewhere" use this.
  */
-export function resolveProjectVaultRoot(cwd: string): string | null {
+export function resolveProjectVaultRoot(cwd: string, sessionId?: string): string | null {
+  // A session's own vault outranks a process-wide pin, because in a process holding
+  // several sessions `WIKI_ROOT` describes whoever set it last, and honouring it over
+  // the asking session's own root is how one conversation reads and writes another's.
+  const session = sessionVaultRoot(sessionId);
+  if (session) return session;
+
   // A whitespace-only value counts as unset, the rule the MCP server applies.
   const pinned = process.env.WIKI_ROOT?.trim();
   if (pinned) return pinned;
@@ -214,12 +265,13 @@ export function resolveProjectVaultRoot(cwd: string): string | null {
  * 5. Personal wiki root (`~`, or `WIKI_HOME`) — used whether or not it already
  *    holds a vault, so first-run bootstrap has somewhere to write.
  */
-export function resolveVaultRoot(cwd: string): string {
+export function resolveVaultRoot(cwd: string, sessionId?: string): string {
   // Realpath the personal fallback so a symlinked `$HOME` (atomic-OS layouts)
   // yields the PHYSICAL root the ancestor walk used to return — the #145
   // regression guard pins that. `realpathWithMissingTail` also covers first-run
   // bootstrap, where the personal root does not exist on disk yet.
-  return resolveProjectVaultRoot(cwd) ?? realpathWithMissingTail(getPersonalWikiRoot());
+  const fallback = realpathWithMissingTail(getPersonalWikiRoot(sessionId));
+  return resolveProjectVaultRoot(cwd, sessionId) ?? fallback;
 }
 
 /** Get all vault paths for the new (.llm-wiki) layout. */
@@ -270,8 +322,8 @@ export function getLegacyVaultPaths(root: string): VaultPaths {
  * Resolve vault paths, auto-detecting new vs legacy layout.
  * This is the main entry point: use this instead of resolveVaultRoot + getVaultPaths.
  */
-export function resolveVaultPaths(cwd: string): VaultPaths {
-  const root = resolveVaultRoot(cwd);
+export function resolveVaultPaths(cwd: string, sessionId?: string): VaultPaths {
+  const root = resolveVaultRoot(cwd, sessionId);
   const format = detectVaultFormat(root);
   if (format === "legacy") return getLegacyVaultPaths(root);
   return getVaultPaths(root);

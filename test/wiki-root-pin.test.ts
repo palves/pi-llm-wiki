@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  ctxSessionId,
   getPersonalWikiRoot,
   getVaultPaths,
   isPersonalVault,
@@ -25,19 +26,23 @@ import {
 let tmpDir: string;
 let priorWikiHome: string | undefined;
 let priorWikiRoot: string | undefined;
+let priorSessionRoots: string | undefined;
 
 beforeEach(() => {
   tmpDir = join(tmpdir(), `llm-wiki-pin-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(tmpDir, { recursive: true });
   priorWikiHome = process.env.WIKI_HOME;
   priorWikiRoot = process.env.WIKI_ROOT;
-  for (const key of ["WIKI_HOME", "WIKI_ROOT"] as const) delete process.env[key];
+  priorSessionRoots = process.env.WIKI_SESSION_ROOTS;
+  for (const key of ["WIKI_HOME", "WIKI_ROOT", "WIKI_SESSION_ROOTS"] as const)
+    delete process.env[key];
 });
 
 afterEach(() => {
   const restore: Array<[string, string | undefined]> = [
     ["WIKI_HOME", priorWikiHome],
     ["WIKI_ROOT", priorWikiRoot],
+    ["WIKI_SESSION_ROOTS", priorSessionRoots],
   ];
   for (const [key, value] of restore) {
     if (value === undefined) delete process.env[key];
@@ -126,5 +131,150 @@ describe("what the pin leaves alone", () => {
     const bare = join(tmpDir, "bare");
     mkdirSync(bare, { recursive: true });
     expect(resolveProjectVaultRoot(bare)).toBeNull();
+  });
+});
+
+/**
+ * `WIKI_SESSION_ROOTS` names a directory of per-session vaults, so a host that runs
+ * several sessions in one process can point each at its own without any one of them
+ * reading a value another session wrote. The pin these tests most need to refuse is
+ * the one left behind by a sibling: `WIKI_ROOT` is process-wide, so it describes
+ * whoever set it last, and honouring it for a session that has a vault of its own is
+ * how one conversation ends up reading and writing another's.
+ */
+const ROOTS = "roots";
+
+function sessionVault(id: string): string {
+  return makeVault(join(tmpDir, ROOTS, id));
+}
+
+describe("WIKI_SESSION_ROOTS", () => {
+  it("gives two sessions in one process two different vaults", () => {
+    // The property the whole mechanism exists for, stated as a single assertion
+    // pair: the same call, the same working directory, differing only in whose
+    // conversation is asking.
+    process.env.WIKI_SESSION_ROOTS = join(tmpDir, ROOTS);
+    const a = sessionVault("session-a");
+    const b = sessionVault("session-b");
+
+    expect(resolveProjectVaultRoot(tmpDir, "session-a")).toBe(a);
+    expect(resolveProjectVaultRoot(tmpDir, "session-b")).toBe(b);
+  });
+
+  it("outranks the process-wide pin, which may belong to a sibling", () => {
+    // A stale WIKI_ROOT naming session-a must not capture session-b's calls.
+    // Reordering these two lines is the mutation this test exists to catch.
+    const mine = sessionVault("session-b");
+    process.env.WIKI_SESSION_ROOTS = join(tmpDir, ROOTS);
+    process.env.WIKI_ROOT = sessionVault("session-a");
+
+    expect(resolveProjectVaultRoot(tmpDir, "session-b")).toBe(mine);
+  });
+
+  it("outranks a vault found in the working directory", () => {
+    const project = makeVault(join(tmpDir, "project"));
+    const mine = sessionVault("session-c");
+    process.env.WIKI_SESSION_ROOTS = join(tmpDir, ROOTS);
+
+    expect(resolveProjectVaultRoot(project, "session-c")).toBe(mine);
+  });
+
+  it("declines a session directory that holds no vault, rather than writing into it", () => {
+    // Materialising the checkout is the sync layer's job and it may not have
+    // reached this session. An answer of "yes" here would put pages in a bare
+    // directory no publish reads, which is the failure the marker test prevents.
+    const halfMade = join(tmpDir, ROOTS, "session-d");
+    mkdirSync(halfMade, { recursive: true });
+    const project = makeVault(join(tmpDir, "project"));
+    process.env.WIKI_SESSION_ROOTS = join(tmpDir, ROOTS);
+
+    expect(resolveProjectVaultRoot(project, "session-d")).toBe(project);
+  });
+
+  it("declines a session directory that does not exist at all", () => {
+    const project = makeVault(join(tmpDir, "project"));
+    process.env.WIKI_SESSION_ROOTS = join(tmpDir, ROOTS);
+
+    expect(resolveProjectVaultRoot(project, "never-bound")).toBe(project);
+  });
+
+  it("does nothing when the caller has no session to name", () => {
+    // The MCP server, the Claude hooks and a plain shell have no session. With
+    // the variable set and no id, resolution must be what it always was.
+    const project = makeVault(join(tmpDir, "project"));
+    process.env.WIKI_SESSION_ROOTS = join(tmpDir, ROOTS);
+    sessionVault("somebody-else");
+
+    expect(resolveProjectVaultRoot(project)).toBe(project);
+    expect(resolveProjectVaultRoot(project, undefined)).toBe(project);
+  });
+
+  it("treats an empty or whitespace value as unset, and a padded path as that path", () => {
+    // Both halves are needed. Dropping the trim alone would still "work" if only
+    // the blank case were tested, because a blank base joins to a path that
+    // cannot exist and the resolver declines for the wrong reason. The padded
+    // base is what forces the trim to be doing the work.
+    const project = makeVault(join(tmpDir, "project"));
+    const mine = sessionVault("session-e");
+    process.env.WIKI_SESSION_ROOTS = "  ";
+    expect(resolveProjectVaultRoot(project, "session-e")).toBe(project);
+
+    process.env.WIKI_SESSION_ROOTS = `  ${join(tmpDir, ROOTS)}  `;
+    expect(resolveProjectVaultRoot(project, "session-e")).toBe(mine);
+  });
+
+  it("counts as the personal root of the session that holds it", () => {
+    // A session working in a checkout of its own has that checkout as its whole
+    // wiki. If layered recall answered "home" here it would merge the shared
+    // store into the session's own search and compare against somebody else's
+    // state.
+    const mine = sessionVault("session-f");
+    process.env.WIKI_SESSION_ROOTS = join(tmpDir, ROOTS);
+    process.env.WIKI_HOME = join(tmpDir, "home6");
+
+    expect(getPersonalWikiRoot("session-f")).toBe(mine);
+    expect(isPersonalVault(getVaultPaths(mine), "session-f")).toBe(true);
+    // Without a session, the personal root is still the user's own.
+    expect(getPersonalWikiRoot()).toBe(join(tmpDir, "home6"));
+    expect(isPersonalVault(getVaultPaths(mine))).toBe(false);
+  });
+
+  it("still honors the pin and the ancestor walk underneath it", () => {
+    // Regression guard for the claim that this is additive: with the variable
+    // unset and no id offered, the documented order is intact.
+    const root = makeVault(join(tmpDir, "mono"));
+    const nested = join(root, "packages", "app");
+    mkdirSync(nested, { recursive: true });
+
+    expect(resolveProjectVaultRoot(nested, "no-such-session")).toBe(root);
+    expect(resolveVaultRoot(nested, "no-such-session")).toBe(root);
+  });
+});
+
+describe("ctxSessionId", () => {
+  it("reads the id pi offers on the handler context", () => {
+    expect(ctxSessionId({ sessionManager: { getSessionId: () => "ctx-session" } })).toBe(
+      "ctx-session",
+    );
+  });
+
+  it("gives up quietly on a context with no session manager", () => {
+    // Every caller treats undefined as "no session pin, use the process rules",
+    // so a throw here would surface as a failed wiki tool rather than as a
+    // fallback.
+    expect(ctxSessionId(undefined)).toBeUndefined();
+    expect(ctxSessionId({})).toBeUndefined();
+    expect(ctxSessionId({ sessionManager: {} })).toBeUndefined();
+    expect(ctxSessionId({ sessionManager: { getSessionId: null } })).toBeUndefined();
+    expect(ctxSessionId({ sessionManager: { getSessionId: () => "" } })).toBeUndefined();
+    expect(
+      ctxSessionId({
+        sessionManager: {
+          getSessionId: () => {
+            throw new Error("session gone");
+          },
+        },
+      }),
+    ).toBeUndefined();
   });
 });
