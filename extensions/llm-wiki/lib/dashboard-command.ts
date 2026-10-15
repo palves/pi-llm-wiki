@@ -10,6 +10,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { Container, matchesKey, Text } from "@earendil-works/pi-tui";
 import { collectDashboardStats, type DashboardStats } from "./dashboard.js";
 import type { Runtime } from "./runtime.js";
+import { ctxSessionId } from "./utils.js";
 
 type App = ExtensionAPI;
 
@@ -103,7 +104,7 @@ export function registerWikiDashboardCommand(pi: ExtensionAPI, runtime: Runtime)
         ctx.ui.notify("LLM Wiki: /wiki-dashboard requires an interactive UI.", "warning");
         return;
       }
-      const stats = await collectDashboardStats(ctx.cwd);
+      const stats = await collectDashboardStats(ctx.cwd, ctxSessionId(ctx));
       await ctx.ui.custom((_tui, _theme, _keybindings, close) => {
         return new DashboardScreen(renderStatsLines(stats), close);
       }, OVERLAY_OPTS);

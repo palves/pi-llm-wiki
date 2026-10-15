@@ -127,8 +127,8 @@ async function readEvents(metaDir: string) {
  * Collect all dashboard stats for the vault reachable from `cwd`.
  * Reuses the extension's own path resolution (same root the tools see).
  */
-export async function collectDashboardStats(cwd: string): Promise<DashboardStats> {
-  const paths: VaultPaths = resolveVaultPaths(cwd);
+export async function collectDashboardStats(cwd: string, sessionId?: string): Promise<DashboardStats> {
+  const paths: VaultPaths = resolveVaultPaths(cwd, sessionId);
 
   const pages: PageInfo[] = [];
   await walkPages(paths.wiki, "", pages);

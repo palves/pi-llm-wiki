@@ -24,6 +24,7 @@ import {
   fmtDate,
   getVaultPaths,
   readJson,
+  ctxSessionId,
   resolveVaultPaths,
   slugify,
   type VaultPaths,
@@ -35,8 +36,8 @@ import { getWikiStatus, reindexWiki, searchRegistry } from "./wiki-service.js";
  * All LLM Wiki custom tools.
  */
 
-function getPaths(cwd?: string): VaultPaths {
-  return resolveVaultPaths(cwd ?? process.cwd());
+function getPaths(cwd?: string, sessionId?: string): VaultPaths {
+  return resolveVaultPaths(cwd ?? process.cwd(), sessionId);
 }
 
 function requireVault(paths: VaultPaths): { ok: true } | { ok: false; reason: string } {
@@ -192,7 +193,7 @@ export function registerWikiCaptureSource(pi: ExtensionAPI, runtime?: Runtime): 
       title: Type.Optional(Type.String({ description: "Title for pasted text" })),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const paths = getPaths(ctx.cwd);
+      const paths = getPaths(ctx.cwd, ctxSessionId(ctx));
       const vaultCheck = inspectWritableVault(paths);
       if (!vaultCheck.ok) {
         return {
@@ -296,7 +297,7 @@ export function registerWikiIngest(pi: ExtensionAPI, runtime?: Runtime): void {
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const paths = getPaths(ctx.cwd);
+      const paths = getPaths(ctx.cwd, ctxSessionId(ctx));
       const vaultCheck = inspectWritableVault(paths);
       if (!vaultCheck.ok) {
         return {
@@ -536,7 +537,7 @@ export function registerWikiEnsurePage(pi: ExtensionAPI, runtime?: Runtime): voi
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const paths = getPaths(ctx.cwd);
+      const paths = getPaths(ctx.cwd, ctxSessionId(ctx));
       const vaultCheck = inspectWritableVault(paths);
       if (!vaultCheck.ok) {
         return {
@@ -820,7 +821,7 @@ export function registerWikiSearch(pi: ExtensionAPI): void {
       type: Type.Optional(Type.String({ description: "Filter by page type" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const paths = getPaths(ctx.cwd);
+      const paths = getPaths(ctx.cwd, ctxSessionId(ctx));
       const result = searchRegistry(paths, params.query, params.type);
 
       if (result.matches.length === 0) {
@@ -873,7 +874,7 @@ export function registerWikiLint(pi: ExtensionAPI, runtime?: Runtime): void {
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const paths = getPaths(ctx.cwd);
+      const paths = getPaths(ctx.cwd, ctxSessionId(ctx));
       const vaultCheck = inspectWritableVault(paths);
       if (!vaultCheck.ok) {
         return {
@@ -915,7 +916,7 @@ export function registerWikiStatus(pi: ExtensionAPI): void {
     promptGuidelines: ["Use wiki_status for a quick overview."],
     parameters: Type.Object({}),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
-      const paths = getPaths(ctx.cwd);
+      const paths = getPaths(ctx.cwd, ctxSessionId(ctx));
       const vaultCheck = requireVault(paths);
       if (!vaultCheck.ok) {
         return {
@@ -998,7 +999,7 @@ export function registerWikiRebuildMeta(pi: ExtensionAPI, runtime?: Runtime): vo
     promptGuidelines: ["Use wiki_rebuild_meta if metadata seems out of sync."],
     parameters: Type.Object({}),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
-      const paths = getPaths(ctx.cwd);
+      const paths = getPaths(ctx.cwd, ctxSessionId(ctx));
       const vaultCheck = inspectWritableVault(paths);
       if (!vaultCheck.ok) {
         return {
@@ -1082,7 +1083,7 @@ export function registerWikiReindexEmbeddings(pi: ExtensionAPI, runtime?: Runtim
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const paths = getPaths(ctx.cwd);
+      const paths = getPaths(ctx.cwd, ctxSessionId(ctx));
       const vaultCheck = inspectWritableVault(paths);
       if (!vaultCheck.ok) {
         return {
@@ -1178,7 +1179,7 @@ export function registerWikiReindex(pi: ExtensionAPI): void {
       ),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const paths = getPaths(ctx.cwd);
+      const paths = getPaths(ctx.cwd, ctxSessionId(ctx));
       const vaultCheck = inspectWritableVault(paths);
       if (!vaultCheck.ok) {
         return {
@@ -1214,6 +1215,7 @@ export function registerWikiReindex(pi: ExtensionAPI): void {
         force,
         vault,
         signal,
+        sessionId: ctxSessionId(ctx),
       });
 
       const ok = result.results.every((r) => r.result.ok);
@@ -1254,7 +1256,7 @@ export function registerWikiLogEvent(pi: ExtensionAPI): void {
       details: Type.Optional(Type.Object({}, { description: "Additional event fields" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const paths = getPaths(ctx.cwd);
+      const paths = getPaths(ctx.cwd, ctxSessionId(ctx));
       const vaultCheck = inspectWritableVault(paths);
       if (!vaultCheck.ok) {
         return {

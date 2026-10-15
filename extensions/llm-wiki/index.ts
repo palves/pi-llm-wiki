@@ -52,6 +52,7 @@ import {
 } from "./lib/trajectory.js";
 import {
   migrateDoubledPersonalVault,
+  ctxSessionId,
   resolveProjectVaultRoot,
   resolveVaultPaths,
 } from "./lib/utils.js";
@@ -99,8 +100,8 @@ export default function (pi: ExtensionAPI) {
    *
    * Resolved per call, not once at load: `cwd` changes within a session.
    */
-  const wikiAppliesTo = (cwd: string): boolean =>
-    resolveProjectVaultRoot(cwd) !== null || personalVaultIsAmbient(runtime.config);
+  const wikiAppliesTo = (cwd: string, sessionId?: string): boolean =>
+    resolveProjectVaultRoot(cwd, sessionId) !== null || personalVaultIsAmbient(runtime.config);
 
   registerWikiBootstrap(pi);
   registerWikiCaptureSource(pi, runtime);
@@ -147,6 +148,10 @@ export default function (pi: ExtensionAPI) {
   // reminder into model context, so the "no wiki here" case needs its own gate.
   registerObservationReminder(pi, reminderState, {
     display: () => noticesEnabled(runtime.config),
+    // No session context reaches a predicate with no arguments, so this answers "is a wiki
+    // reachable from this process" rather than "does the asking session have one". A
+    // session-scoped decision belongs on the send path, which does hold a ctx; the cost of
+    // the difference here is a reminder shown or hidden, never a page written somewhere else.
     enabled: () => wikiAppliesTo(process.cwd()),
   });
 
@@ -180,9 +185,9 @@ export default function (pi: ExtensionAPI) {
     // `llm-wiki.ambientPersonalVault` is honored on the very first session —
     // `runtime.config` is otherwise empty until the first `turn_start`.
     runtime.ensureConfig(process.cwd());
-    if (!wikiAppliesTo(process.cwd())) return;
+    if (!wikiAppliesTo(process.cwd(), ctxSessionId(ctx))) return;
 
-    const paths = resolveVaultPaths(process.cwd());
+    const paths = resolveVaultPaths(process.cwd(), ctxSessionId(ctx));
     if (!existsSync(join(paths.dotWiki, "config.json"))) {
       // Silently create the wiki vault — no UI prompts. Topic/mode will be
       // inferred from the user's first prompt via before_agent_start.
@@ -250,9 +255,9 @@ export default function (pi: ExtensionAPI) {
   //    from the user's first prompt and update config via wiki_bootstrap.
   // 2. Search both personal + project vaults for relevant pages.
   pi.on("before_agent_start", async (event, ctx) => {
-    if (!wikiAppliesTo(process.cwd())) return;
+    if (!wikiAppliesTo(process.cwd(), ctxSessionId(ctx))) return;
 
-    const paths = resolveVaultPaths(process.cwd());
+    const paths = resolveVaultPaths(process.cwd(), ctxSessionId(ctx));
     if (!existsSync(join(paths.dotWiki, "config.json"))) {
       return;
     }
@@ -316,13 +321,13 @@ Then call wiki_bootstrap with the inferred topic and mode to finalize the setup.
       runtime.ensureConfig(process.cwd());
       const results = await searchWikiHybrid(paths, prompt, 3, 5, false, {
         config: runtime.config,
-      });
+      }, ctxSessionId(ctx));
       if (results.length > 0) {
         // Two-stage gate (issue #68): above the vault-size threshold, inject
         // ranked LINKS only (the agent expands them on demand via `read`) so a
         // large vault never floods the system prompt with inline previews.
         // includePersonal=false here mirrors the auto-injection search scope.
-        const linksOnly = shouldUseLinksFirst(vaultPageCount(paths, false), runtime.config);
+        const linksOnly = shouldUseLinksFirst(vaultPageCount(paths, false, ctxSessionId(ctx)), runtime.config);
         const recallContext = formatRecallContext(results, {
           linksOnly,
           skillInlineMax: runtime.config?.recallSkillInlineMax,

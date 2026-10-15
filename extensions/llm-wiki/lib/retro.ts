@@ -7,7 +7,7 @@ import { applyWikilinkGate, buildWikilinkIndex } from "./knowledge-links.js";
 import { appendEvent, rebuildMetadataLight } from "./metadata.js";
 import type { Runtime } from "./runtime.js";
 import { loadTaskConfig, resolveWikilinkValidation } from "./task-config.js";
-import { fmtDate, readJson, resolveVaultPaths, type VaultPaths } from "./utils.js";
+import { ctxSessionId, fmtDate, readJson, resolveVaultPaths, type VaultPaths } from "./utils.js";
 import { assertWritableVault, inspectWritableVault } from "./vault-format.js";
 
 // ─── Public API ────────────────────────────────────────
@@ -133,7 +133,7 @@ export function registerWikiRetro(pi: ExtensionAPI, runtime?: Runtime): void {
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const paths = resolveVaultPaths(ctx.cwd ?? process.cwd());
+      const paths = resolveVaultPaths(ctx.cwd ?? process.cwd(), ctxSessionId(ctx));
 
       const vaultCheck = inspectWritableVault(paths);
       if (!vaultCheck.ok) {

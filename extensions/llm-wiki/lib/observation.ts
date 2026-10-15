@@ -5,7 +5,7 @@ import { scheduleReindex } from "./indexing.js";
 import { createKnowledgeDocument, writeKnowledgeDocumentFile } from "./knowledge-document.js";
 import { appendEvent, rebuildMetadataLight } from "./metadata.js";
 import type { Runtime } from "./runtime.js";
-import { fmtDate, resolveVaultPaths, type VaultPaths } from "./utils.js";
+import { ctxSessionId, fmtDate, resolveVaultPaths, type VaultPaths } from "./utils.js";
 import { assertWritableVault, inspectWritableVault } from "./vault-format.js";
 
 // ─── Types ─────────────────────────────────────────────
@@ -201,7 +201,7 @@ export function registerWikiObserve(
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const paths = resolveVaultPaths(ctx.cwd ?? process.cwd());
+      const paths = resolveVaultPaths(ctx.cwd ?? process.cwd(), ctxSessionId(ctx));
 
       const vaultCheck = inspectWritableVault(paths);
       if (!vaultCheck.ok) {

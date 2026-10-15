@@ -9,6 +9,7 @@ import {
   fmtDate,
   nextTrajectoryId,
   readJson,
+  ctxSessionId,
   resolveVaultPaths,
   type VaultPaths,
   writeJson,
@@ -358,7 +359,7 @@ export function registerWikiCaptureTrajectory(pi: ExtensionAPI): void {
       model: Type.Optional(Type.String({ description: "Model that ran the task." })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx: ExtensionContext) {
-      const paths = resolveVaultPaths(ctx.cwd ?? process.cwd());
+      const paths = resolveVaultPaths(ctx.cwd ?? process.cwd(), ctxSessionId(ctx));
       const vaultCheck = inspectWritableVault(paths);
       if (!vaultCheck.ok) {
         return {
@@ -469,7 +470,7 @@ export function registerWikiDistillSkills(pi: ExtensionAPI): void {
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx: ExtensionContext) {
-      const paths = resolveVaultPaths(ctx.cwd ?? process.cwd());
+      const paths = resolveVaultPaths(ctx.cwd ?? process.cwd(), ctxSessionId(ctx));
       if (!existsSync(join(paths.dotWiki, "config.json"))) return vaultMissing();
 
       const batchSize = Math.min(params.batch_size ?? 3, 5);
@@ -587,7 +588,7 @@ export function registerWikiRecallSkill(pi: ExtensionAPI): void {
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx: ExtensionContext) {
-      const paths = resolveVaultPaths(ctx.cwd ?? process.cwd());
+      const paths = resolveVaultPaths(ctx.cwd ?? process.cwd(), ctxSessionId(ctx));
       if (!existsSync(join(paths.dotWiki, "config.json"))) return vaultMissing();
 
       const maxResults = Math.min(params.max_results ?? 5, 10);

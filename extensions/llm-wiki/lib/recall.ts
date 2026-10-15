@@ -15,6 +15,7 @@ import type { Registry } from "./metadata.js";
 import type { Runtime } from "./runtime.js";
 import type { TaskConfig } from "./task-config.js";
 import {
+  ctxSessionId,
   getPersonalWikiPaths,
   isPersonalVault,
   readJson,
@@ -646,6 +647,7 @@ export function searchWikiLayered(
   minScore = 0,
   includePersonal = true,
   semantic?: SemanticContext,
+  sessionId?: string,
 ): RecallResult[] {
   // Search primary vault
   const primaryResults = searchWiki(primaryPaths, query, maxResults, minScore, semantic);
@@ -656,7 +658,7 @@ export function searchWikiLayered(
   // Search personal vault as secondary layer (only when explicitly requested)
   let personalResults: RecallResult[] = [];
   if (includePersonal) {
-    const personalPaths = getPersonalWikiPaths();
+    const personalPaths = getPersonalWikiPaths(sessionId);
     if (existsSync(join(personalPaths.dotWiki, "config.json"))) {
       personalResults = searchWiki(personalPaths, query, maxResults, minScore, semantic);
     }
@@ -748,24 +750,25 @@ export async function searchWikiHybrid(
   minScore = 0,
   includePersonal = true,
   opts: { config?: TaskConfig; embedder?: Embedder } = {},
+  sessionId?: string,
 ): Promise<RecallResult[]> {
   // Pure-lexical fast path: no semantic signal anywhere => no embedding call.
   let anyEmbeddings = storeHasEntries(primaryPaths);
   if (!anyEmbeddings && includePersonal && !isPersonalVault(primaryPaths)) {
-    const personalPaths = getPersonalWikiPaths();
+    const personalPaths = getPersonalWikiPaths(sessionId);
     if (existsSync(join(personalPaths.dotWiki, "config.json"))) {
       anyEmbeddings = storeHasEntries(personalPaths);
     }
   }
   if (!anyEmbeddings) {
-    return searchWikiLayered(primaryPaths, query, maxResults, minScore, includePersonal);
+    return searchWikiLayered(primaryPaths, query, maxResults, minScore, includePersonal, undefined, sessionId);
   }
 
   const embedder = opts.embedder ?? (opts.config ? resolveEmbedder(opts.config) : undefined);
   if (!embedder) {
     // Embeddings exist but no embedder configured to embed the query: fall back
     // to pure lexical rather than guess. (Degrades gracefully.)
-    return searchWikiLayered(primaryPaths, query, maxResults, minScore, includePersonal);
+    return searchWikiLayered(primaryPaths, query, maxResults, minScore, includePersonal, undefined, sessionId);
   }
 
   let semantic: SemanticContext | undefined;
@@ -780,7 +783,7 @@ export async function searchWikiHybrid(
     semantic = undefined;
   }
 
-  return searchWikiLayered(primaryPaths, query, maxResults, minScore, includePersonal, semantic);
+  return searchWikiLayered(primaryPaths, query, maxResults, minScore, includePersonal, semantic, sessionId);
 }
 
 /**
@@ -809,10 +812,10 @@ function registryPageCount(paths: VaultPaths): number {
  * to the same corpus the agent sees. Reads only `registry.json` — never a page
  * body — so the gate stays cheap as the vault grows.
  */
-export function vaultPageCount(primaryPaths: VaultPaths, includePersonal = true): number {
+export function vaultPageCount(primaryPaths: VaultPaths, includePersonal = true, sessionId?: string): number {
   let count = registryPageCount(primaryPaths);
   if (includePersonal && !isPersonalVault(primaryPaths)) {
-    const personalPaths = getPersonalWikiPaths();
+    const personalPaths = getPersonalWikiPaths(sessionId);
     if (existsSync(join(personalPaths.dotWiki, "config.json"))) {
       count += registryPageCount(personalPaths);
     }
@@ -1039,7 +1042,7 @@ export function registerWikiRecall(pi: ExtensionAPI, runtime?: Runtime): void {
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const paths = resolveVaultPaths(ctx.cwd ?? process.cwd());
+      const paths = resolveVaultPaths(ctx.cwd ?? process.cwd(), ctxSessionId(ctx));
 
       if (!existsSync(join(paths.dotWiki, "config.json"))) {
         return {
@@ -1065,7 +1068,7 @@ export function registerWikiRecall(pi: ExtensionAPI, runtime?: Runtime): void {
       if (runtime) runtime.ensureConfig(ctx.cwd ?? paths.root);
       const results = await searchWikiHybrid(paths, params.query, maxResults, 0, true, {
         config: runtime?.config,
-      });
+      }, ctxSessionId(ctx));
 
       if (results.length === 0) {
         return {
@@ -1089,7 +1092,7 @@ export function registerWikiRecall(pi: ExtensionAPI, runtime?: Runtime): void {
       // Two-stage gate (issue #68): large vaults return ranked LINKS only;
       // the agent expands chosen links on demand via `read`. Small vaults keep
       // the inline-preview behavior. Page count is read from the registry only.
-      const linksFirst = shouldUseLinksFirst(vaultPageCount(paths, true), runtime?.config);
+      const linksFirst = shouldUseLinksFirst(vaultPageCount(paths, true, ctxSessionId(ctx)), runtime?.config);
 
       if (linksFirst) {
         const linkLines = results

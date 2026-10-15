@@ -31,6 +31,7 @@ The personal vault lives at `~/.llm-wiki/` (or `$WIKI_HOME`) and is always avail
 | ----------------------------- | ----------- | ----------------------------------------------- |
 | `WIKI_HOME`                   | `~/.llm-wiki` | Override the personal wiki vault location     |
 | `WIKI_ROOT`                   | unset         | Pin the active vault, above the working directory |
+| `WIKI_SESSION_ROOTS`          | unset         | Base directory of per-session vaults, each in a subdirectory named after the session id |
 | `WIKI_MARKITDOWN_TIMEOUT_MS` | 180000      | Timeout (ms) for MarkItDown PDF/text extraction |
 | `LLM_WIKI_HOST`              | auto        | Force the host layout: `pi` or `omp`            |
 
@@ -97,9 +98,21 @@ Example:
 
 The vault root is resolved in this priority order:
 
-1. **Pinned vault**: `$WIKI_ROOT`, when set, names the vault for this host or session
-2. **Project vault**: walk up from current directory looking for `.llm-wiki/`
-3. **Personal vault**: fall back to `$WIKI_HOME` or `~/.llm-wiki/`
+1. **Session vault**: `$WIKI_SESSION_ROOTS/<session id>`, used when that directory contains `.llm-wiki/`
+2. **Pinned vault**: `$WIKI_ROOT`, when set, names the vault for the whole process.
+3. **Project vault**: walk up from current directory looking for `.llm-wiki/`
+4. **Personal vault**: fall back to `$WIKI_HOME` or `~/.llm-wiki/`
+
+`WIKI_SESSION_ROOTS` serves a host that wants one vault per conversation instead of
+one per process, such as an agent host running subagents in-process and wanting each
+session's notes to land apart from its parent's. It is opt-in, and unset leaves every
+session in a process on the vault these rules select, which is the right answer when
+concurrent sessions are meant to contribute to the same wiki.
+
+Where it is set, a session's directory outranks `$WIKI_ROOT`, since it names one
+conversation and `$WIKI_ROOT` names the process holding all of them. A session with no
+subdirectory there, or one that does not contain `.llm-wiki/`, gets the vault the rules
+above select. Resolution never creates a session vault.
 
 This means when you're in a project with its own `.llm-wiki/`, that project wiki is active. When you're outside any project wiki, your personal `~/.llm-wiki/` takes over automatically.
 
