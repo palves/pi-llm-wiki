@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { rootDir } from "./helpers.js";
+import { packedFiles, rootDir } from "./helpers.js";
 
 describe("npm package boundary", () => {
   it("packs the runnable MCP server and Claude assets", () => {
@@ -9,8 +9,7 @@ describe("npm package boundary", () => {
       cwd: rootDir,
       encoding: "utf8",
     });
-    const report = JSON.parse(output) as Array<{ files: Array<{ path: string }> }>;
-    const packed = new Set(report[0].files.map(({ path }) => path.replaceAll("\\", "/")));
+    const packed = new Set(packedFiles(output));
     for (const required of [
       "dist/mcp/index.js",
       "dist/package.json",

@@ -12,6 +12,24 @@ const __dname =
 
 export const rootDir = resolve(__dname, "..");
 
+/**
+ * The file list `npm pack --dry-run --json` reports for this package, with Windows
+ * separators folded.  npm 10 returns an array of entries, and npm 12 returns an object keyed
+ * by package name.  Either form can arrive here, so a caller reading `report[0]` gets
+ * `undefined` on one of them and a TypeError instead of an assertion failure.
+ */
+export function packedFiles(json: string): string[] {
+  const report = JSON.parse(json) as
+    | Array<{ files?: Array<{ path: string }> }>
+    | Record<string, { files?: Array<{ path: string }> }>;
+  const entries = Array.isArray(report) ? report : Object.values(report);
+  const first = entries[0];
+  if (!first) {
+    throw new Error("npm pack --json reported no package entry");
+  }
+  return (first.files ?? []).map(({ path }) => path.replaceAll("\\", "/"));
+}
+
 export function readFile(path: string): string {
   return readFileSync(path, { encoding: "utf-8" });
 }

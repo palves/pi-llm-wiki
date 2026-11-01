@@ -15,7 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { rootDir } from "./helpers.js";
+import { packedFiles, rootDir } from "./helpers.js";
 
 const script = join(rootDir, "scripts", "migrate-llm-wiki.js");
 const roots: string[] = [];
@@ -416,7 +416,6 @@ describe("migrate-llm-wiki CLI", () => {
       encoding: "utf8",
     });
     expect(packed.status, packed.stderr).toBe(0);
-    const report = JSON.parse(packed.stdout) as Array<{ files: Array<{ path: string }> }>;
-    expect(report[0].files.map((file) => file.path)).toContain("scripts/migrate-llm-wiki.js");
+    expect(packedFiles(packed.stdout)).toContain("scripts/migrate-llm-wiki.js");
   }, 30_000);
 });
