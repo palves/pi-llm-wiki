@@ -28,6 +28,7 @@ import {
   loadTaskConfig,
   noticesEnabled,
   personalVaultIsAmbient,
+  statusBadgeEnabled,
   trajectoriesEnabled,
 } from "./lib/task-config.js";
 import {
@@ -161,19 +162,30 @@ export default function (pi: ExtensionAPI) {
   let needsTopicInference = false;
 
   pi.on("session_start", async (_event, ctx) => {
+    // Loaded first: the ambient gate below reads `llm-wiki.ambientPersonalVault`
+    // and the footer gate reads `llm-wiki.statusBadge`, and `runtime.config` is
+    // otherwise empty until the first `turn_start`.
+    runtime.ensureConfig(process.cwd());
+
+    // A one-off message about the vault itself.  The transcript copy is always
+    // sent, which is where such a message belongs anyway: a notice owns the full
+    // width of a line instead of sharing the footer row.  `notices` does not gate
+    // it, that setting is about routine chatter.  The footer copy follows
+    // `statusBadge`, so hiding the line costs the row and not the message.
+    const reportVaultEvent = (text: string, kind: "info" | "error"): void => {
+      ctx.ui.notify(`LLM Wiki: ${text}`, kind);
+      if (statusBadgeEnabled(runtime.config)) ctx.ui.setStatus("llm-wiki", `\u{1F9E0} ${text}`);
+    };
+
     // One-shot recovery for vaults created with the broken personal-root
     // (~/.llm-wiki/.llm-wiki/… doubled layout). Runs on every session start
     // because it is a cheap existence-check no-op when the layout is correct.
     try {
       const migration = migrateDoubledPersonalVault();
       if (migration && migration.moved.length > 0) {
-        // INTENTIONALLY NOT gated by `noticesEnabled` (issues #77, #84): this is
-        // a one-shot data-integrity recovery signal, not chat-noise. If the
-        // user has a broken doubled-dotdir layout we want them to see that it
-        // was fixed, even in quiet mode.
-        ctx.ui.setStatus(
-          "llm-wiki",
-          `🧠 Personal wiki layout fixed: flattened ${migration.moved.length} entries out of ${migration.from} (see CHANGELOG)`,
+        reportVaultEvent(
+          `personal layout fixed, flattened ${migration.moved.length} entries out of ${migration.from} (see CHANGELOG)`,
+          "info",
         );
       }
     } catch (err) {
@@ -181,10 +193,6 @@ export default function (pi: ExtensionAPI) {
       console.warn(`[llm-wiki] doubled-dotdir migration skipped: ${(err as Error).message}`);
     }
 
-    // Ambient gate. `ensureConfig` first so an explicit
-    // `llm-wiki.ambientPersonalVault` is honored on the very first session —
-    // `runtime.config` is otherwise empty until the first `turn_start`.
-    runtime.ensureConfig(process.cwd());
     if (!wikiAppliesTo(process.cwd(), ctxSessionId(ctx))) return;
 
     const paths = resolveVaultPaths(process.cwd(), ctxSessionId(ctx));
@@ -193,33 +201,30 @@ export default function (pi: ExtensionAPI) {
       // inferred from the user's first prompt via before_agent_start.
       const result = bootstrapVault(paths, { topic: "pending", mode: "personal" });
       if (!result.ok || !result.projection.ok) {
-        ctx.ui.setStatus(
-          "llm-wiki",
-          `🧠 Wiki setup blocked: ${
+        reportVaultEvent(
+          `setup blocked: ${
             result.ok ? result.projection.diagnostics[0].message : result.diagnostics[0].message
           }`,
+          "error",
         );
         return;
       }
 
       needsTopicInference = true;
-      // INTENTIONALLY NOT gated by `noticesEnabled` (issues #77, #84): one-shot
-      // first-run setup signal. The user needs to know the wiki was just
-      // auto-created, regardless of quiet mode.
-      ctx.ui.setStatus("llm-wiki", "🧠 Wiki created (inferring topic from first prompt…)");
+      reportVaultEvent("created a vault here, inferring its topic from the first prompt", "info");
       return;
     }
 
     const writable = inspectWritableVault(paths);
     if (!writable.ok) {
-      ctx.ui.setStatus("llm-wiki", `🧠 Wiki setup blocked: ${writable.diagnostics[0].message}`);
+      reportVaultEvent(`setup blocked: ${writable.diagnostics[0].message}`, "error");
       return;
     }
 
     // Surface the "wiki active" badge and the active background task model
-    // (issue #69), both gated by `llm-wiki.notices` (issue #77, regression
-    // fixed in #83, helper extracted in #84). The `ensureConfig` above the
-    // ambient gate already loaded the project settings this reads.
+    // (issue #69), each gated by the setting for its own footer line.  The
+    // `ensureConfig` above the ambient gate already loaded the project settings
+    // this reads.
     applySessionStartStatus({
       ui: ctx.ui,
       runtime,
@@ -354,9 +359,10 @@ Then call wiki_bootstrap with the inferred topic and mode to finalize the setup.
           dynamicContext += `\n\n${recallContext}`;
         }
         // Recall-aware status line (issue #77): make it visible that recall
-        // actually fired and how many pages matched. Purely a UI signal — no
-        // added model context. Honors the `notices` opt-out.
-        if (ctx?.hasUI && noticesEnabled(runtime.config)) {
+        // actually fired and how many pages matched.  Purely a UI signal, no
+        // added model context.  This is the `llm-wiki` slot, so `statusBadge`
+        // decides whether it is written.
+        if (ctx?.hasUI && statusBadgeEnabled(runtime.config)) {
           const n = results.length;
           ctx.ui.setStatus(
             "llm-wiki",

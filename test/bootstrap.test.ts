@@ -78,7 +78,7 @@ describe("bootstrap", () => {
       {
         cwd,
         hasUI: true,
-        ui: { setStatus: () => {} },
+        ui: { setStatus: () => {}, notify: () => {} },
         model: { id: "test" },
       },
     );
@@ -107,18 +107,55 @@ describe("bootstrap", () => {
     expect(resolveVaultPaths(cwd).root).toBe(cwd);
     const { handlers } = extensionHarness();
     const statuses: string[] = [];
+    const notes: string[] = [];
     const sessionStart = handlers.get("session_start")?.at(-1);
     await sessionStart?.(
       {},
       {
         cwd,
         hasUI: true,
-        ui: { setStatus: (_key: string, value: string) => statuses.push(value) },
+        ui: {
+          setStatus: (_key: string, value: string) => statuses.push(value),
+          notify: (message: string) => notes.push(message),
+        },
         model: { id: "test" },
       },
     );
     expect(statuses.some((status) => status.includes("setup blocked"))).toBe(true);
+    expect(notes.some((note) => note.includes("setup blocked"))).toBe(true);
     expect(existsSync(join(paths.dotWiki, "config.json"))).toBe(false);
+  });
+
+  it("keeps the setup notice in the transcript when the footer line is off", async () => {
+    const cwd = root();
+    const paths = getVaultPaths(cwd);
+    mkdirSync(join(paths.wiki, "concepts"), { recursive: true });
+    writeFileSync(join(paths.wiki, "concepts", "bad.md"), "malformed\n");
+    mkdirSync(join(cwd, ".pi"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".pi", "settings.json"),
+      JSON.stringify({ "llm-wiki": { statusBadge: false } }),
+    );
+    process.chdir(cwd);
+    Reflect.deleteProperty(process.env, "WIKI_HOME");
+    const { handlers } = extensionHarness();
+    const statuses: string[] = [];
+    const notes: string[] = [];
+    const sessionStart = handlers.get("session_start")?.at(-1);
+    await sessionStart?.(
+      {},
+      {
+        cwd,
+        hasUI: true,
+        ui: {
+          setStatus: (_key: string, value: string) => statuses.push(value),
+          notify: (message: string) => notes.push(message),
+        },
+        model: { id: "test" },
+      },
+    );
+    expect(notes.some((note) => note.includes("setup blocked"))).toBe(true);
+    expect(statuses.some((status) => status.includes("setup blocked"))).toBe(false);
   });
 
   it("blocks an existing invalid vault during real session startup", async () => {
@@ -134,17 +171,22 @@ describe("bootstrap", () => {
     expect(resolveVaultPaths(cwd).root).toBe(cwd);
     const { handlers } = extensionHarness();
     const statuses: string[] = [];
+    const notes: string[] = [];
     const sessionStart = handlers.get("session_start")?.at(-1);
     await sessionStart?.(
       {},
       {
         cwd,
         hasUI: true,
-        ui: { setStatus: (_key: string, value: string) => statuses.push(value) },
+        ui: {
+          setStatus: (_key: string, value: string) => statuses.push(value),
+          notify: (message: string) => notes.push(message),
+        },
         model: { id: "test" },
       },
     );
     expect(statuses.some((status) => status.includes("setup blocked"))).toBe(true);
+    expect(notes.some((note) => note.includes("setup blocked"))).toBe(true);
     expect(existsSync(join(paths.meta, "events.jsonl"))).toBe(false);
   });
 

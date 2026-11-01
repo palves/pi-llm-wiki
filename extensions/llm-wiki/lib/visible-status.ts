@@ -1,33 +1,38 @@
 import { formatActiveModelLabel, MODEL_STATUS_KEY } from "./model-command.js";
 import type { Runtime } from "./runtime.js";
-import { noticesEnabled } from "./task-config.js";
+import { statusBadgeEnabled, statusModelEnabled } from "./task-config.js";
 
 /**
  * Minimal sink for the two status keys this helper writes. Mirrors the slice
  * of `ctx.ui` the extension uses; kept narrow so tests don't need to fake the
- * whole pi UI surface.
+ * whole pi UI surface.  A value of `undefined` clears the slot.
  */
 export interface StatusSink {
-  setStatus(key: string, value: string): void;
+  setStatus(key: string, value: string | undefined): void;
 }
 
 /**
- * Apply the two post-session-start visible status lines (issue #77,
- * regression-fixed in #83, comments + tests hardened in #84):
+ * Write the two footer status lines for the current session:
  *
  *   1. `🧠 LLM Wiki (… tools, … active)`     — the "wiki is loaded" badge
  *   2. `🧠 wiki model: <label>`              — the active background task model
  *
- * Both are user-facing chat noise and are gated by `llm-wiki.notices`
- * (default `true`). When `notices: false`, neither status is set — that's the
- * contract the regression in #83 was about.
+ * The badge is written when `llm-wiki.statusBadge` allows it and the model line
+ * when `llm-wiki.statusModel` does, both defaulting to `true`.  `notices`
+ * governs the transcript and is not read here.
  *
- * Extracted from `index.ts` so the gating contract is unit-testable without
- * faking the entire pi extension factory; see `test/visible-activity.test.ts`.
+ * `statusBadge` decides what occupies the `llm-wiki` slot.  The recall-count
+ * rewrite in `index.ts` writes that same slot, so it checks the setting too.
  *
- * Pure modulo `ui.setStatus`. Callers MUST run `runtime.ensureConfig(...)` for
- * the current cwd before invoking this so `noticesEnabled(runtime.config)`
- * sees the loaded project settings.
+ * A line whose setting is off gets setStatus(key, undefined), pi's clear,
+ * instead of no call at all.  `/wiki-settings` re-runs this after a toggle, and
+ * the text written at session start stays on the footer until something removes
+ * it.
+ *
+ * The helper lives apart from `index.ts` so the gating is testable without
+ * faking the extension factory.  See `test/visible-activity.test.ts`.  Pure
+ * modulo `ui.setStatus`.  Callers MUST run `runtime.ensureConfig(...)` for the
+ * current cwd first, so the resolvers see the loaded project settings.
  */
 export function applySessionStartStatus(opts: {
   ui: StatusSink;
@@ -35,17 +40,21 @@ export function applySessionStartStatus(opts: {
   trajectoriesOn: boolean;
   sessionModelId: string | undefined;
 }): void {
-  // Single gate for BOTH status lines (#83 added two adjacent guards; #84
-  // collapses them — same condition, same scope).
-  if (!noticesEnabled(opts.runtime.config)) return;
+  if (statusBadgeEnabled(opts.runtime.config)) {
+    opts.ui.setStatus(
+      "llm-wiki",
+      opts.trajectoriesOn
+        ? "🧠 LLM Wiki (16 tools, trajectory + observe + recall active)"
+        : "🧠 LLM Wiki (13 tools, observe + recall active)",
+    );
+  } else {
+    opts.ui.setStatus("llm-wiki", undefined);
+  }
 
-  opts.ui.setStatus(
-    "llm-wiki",
-    opts.trajectoriesOn
-      ? "🧠 LLM Wiki (16 tools, trajectory + observe + recall active)"
-      : "🧠 LLM Wiki (13 tools, observe + recall active)",
-  );
-
-  const modelLabel = formatActiveModelLabel(opts.runtime.config, opts.sessionModelId);
-  opts.ui.setStatus(MODEL_STATUS_KEY, `🧠 wiki model: ${modelLabel}`);
+  if (statusModelEnabled(opts.runtime.config)) {
+    const modelLabel = formatActiveModelLabel(opts.runtime.config, opts.sessionModelId);
+    opts.ui.setStatus(MODEL_STATUS_KEY, `🧠 wiki model: ${modelLabel}`);
+  } else {
+    opts.ui.setStatus(MODEL_STATUS_KEY, undefined);
+  }
 }

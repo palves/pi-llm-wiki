@@ -5,7 +5,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MODEL_STATUS_KEY } from "../extensions/llm-wiki/lib/model-command.js";
 import { buildReminderText, buildSessionNotice } from "../extensions/llm-wiki/lib/observation.js";
 import { Runtime } from "../extensions/llm-wiki/lib/runtime.js";
-import { loadTaskConfig, noticesEnabled } from "../extensions/llm-wiki/lib/task-config.js";
+import {
+  loadTaskConfig,
+  noticesEnabled,
+  statusBadgeEnabled,
+  statusModelEnabled,
+} from "../extensions/llm-wiki/lib/task-config.js";
 import { applySessionStartStatus } from "../extensions/llm-wiki/lib/visible-status.js";
 
 // Issue #77: make wiki activity visible (recall status, observe/retro reminder,
@@ -151,22 +156,24 @@ describe("Runtime.launchReported (issue #77)", () => {
   });
 });
 
-// ─── applySessionStartStatus (issues #77, #83, #84) ─────────────────────────
+// ─── applySessionStartStatus ───────────────────────────────────────────────
 //
-// Regression guard for #83: the two `setStatus` calls in `session_start`
-// (`🧠 LLM Wiki (…)` and `🧠 wiki model: …`) MUST be silenced when
-// `notices: false`. The original #77 implementation only gated the reminder
-// and the session-notice message; the status lines slipped through and
-// surfaced even in quiet mode. PR #83 added the guards; PR #84 extracted the
-// gating block into this helper so it's directly testable instead of buried
-// inside the `pi.on("session_start", …)` closure.
+// The two `setStatus` calls made at session start each answer to one setting,
+// the `🧠 LLM Wiki (…)` badge to `statusBadge` and the `🧠 wiki model: …` line to
+// `statusModel`.  `notices` governs the transcript and is not read here.  A
+// rejected line is still passed to `setStatus`, as `undefined`, since the slot
+// may already hold text.
 
 interface StatusCall {
   key: string;
-  value: string;
+  /** `undefined` is a clear, which is what a disabled line emits. */
+  value: string | undefined;
 }
 
-function fakeUi(): { ui: { setStatus: (k: string, v: string) => void }; calls: StatusCall[] } {
+function fakeUi(): {
+  ui: { setStatus: (k: string, v: string | undefined) => void };
+  calls: StatusCall[];
+} {
   const calls: StatusCall[] = [];
   return {
     ui: { setStatus: (key, value) => calls.push({ key, value }) },
@@ -174,11 +181,11 @@ function fakeUi(): { ui: { setStatus: (k: string, v: string) => void }; calls: S
   };
 }
 
-describe("applySessionStartStatus (issues #77 + #83 + #84)", () => {
-  it("sets BOTH status lines when notices default (unset) — default-on contract", () => {
+describe("applySessionStartStatus (per-line status gating)", () => {
+  it("sets BOTH status lines on an empty config — default-on contract", () => {
     const rt = new Runtime();
     // rt.config is `{}` by default — same shape as before ensureConfig runs.
-    // noticesEnabled({}) === true, so the helper must still emit both lines.
+    // Both resolvers default to true, so an empty config emits both lines.
     // This is the case that nudged the original #83 author toward an
     // "ensureConfig was empty" theory; the test pins down that empty-config
     // is default-ON and therefore non-silencing.
@@ -227,9 +234,9 @@ describe("applySessionStartStatus (issues #77 + #83 + #84)", () => {
     expect(calls[0].value).toBe("🧠 LLM Wiki (16 tools, trajectory + observe + recall active)");
   });
 
-  // ↑ Default-on / explicit-on coverage. ↓ The actual #83 regression contract.
+  // Neither footer line reads `notices`, so switching it changes nothing here.
 
-  it("emits NEITHER status line when notices: false (regression guard for #83)", () => {
+  it("writes both status lines when notices: false", () => {
     const rt = new Runtime();
     rt.config = { notices: false };
     const { ui, calls } = fakeUi();
@@ -239,10 +246,10 @@ describe("applySessionStartStatus (issues #77 + #83 + #84)", () => {
       trajectoriesOn: false,
       sessionModelId: "anthropic-sonnet-4",
     });
-    expect(calls).toHaveLength(0);
+    expect(calls).toHaveLength(2);
   });
 
-  it("emits NEITHER status line when notices: false AND trajectoriesOn (sanity)", () => {
+  it("still chooses the badge's tools-active label from trajectoriesOn when notices: false", () => {
     const rt = new Runtime();
     rt.config = { notices: false };
     const { ui, calls } = fakeUi();
@@ -252,10 +259,10 @@ describe("applySessionStartStatus (issues #77 + #83 + #84)", () => {
       trajectoriesOn: true,
       sessionModelId: "anthropic-sonnet-4",
     });
-    // Both keys must stay silent regardless of which tools-active label would
-    // otherwise have been chosen.
-    expect(calls.some((c) => c.key === "llm-wiki")).toBe(false);
-    expect(calls.some((c) => c.key === MODEL_STATUS_KEY)).toBe(false);
+    expect(calls[0]).toEqual({
+      key: "llm-wiki",
+      value: "🧠 LLM Wiki (16 tools, trajectory + observe + recall active)",
+    });
   });
 
   it("uses the configured taskModel label when one is set", () => {
@@ -273,6 +280,125 @@ describe("applySessionStartStatus (issues #77 + #83 + #84)", () => {
       key: MODEL_STATUS_KEY,
       value: "🧠 wiki model: anthropic/claude-sonnet-4",
     });
+  });
+
+  // Each setting hides its own line and leaves the other one.
+
+  it("clears only the badge when statusBadge: false, leaving the model line set", () => {
+    const rt = new Runtime();
+    rt.config = { statusBadge: false };
+    const { ui, calls } = fakeUi();
+    applySessionStartStatus({
+      ui,
+      runtime: rt,
+      trajectoriesOn: false,
+      sessionModelId: "anthropic-sonnet-4",
+    });
+    expect(calls).toEqual([
+      { key: "llm-wiki", value: undefined },
+      { key: MODEL_STATUS_KEY, value: "🧠 wiki model: session model (anthropic-sonnet-4)" },
+    ]);
+  });
+
+  it("clears only the model line when statusModel: false, leaving the badge set", () => {
+    const rt = new Runtime();
+    rt.config = { statusModel: false };
+    const { ui, calls } = fakeUi();
+    applySessionStartStatus({
+      ui,
+      runtime: rt,
+      trajectoriesOn: false,
+      sessionModelId: "anthropic-sonnet-4",
+    });
+    expect(calls).toEqual([
+      { key: "llm-wiki", value: "🧠 LLM Wiki (13 tools, observe + recall active)" },
+      { key: MODEL_STATUS_KEY, value: undefined },
+    ]);
+  });
+
+  it("clears both lines when both are false and notices is on", () => {
+    const rt = new Runtime();
+    rt.config = { notices: true, statusBadge: false, statusModel: false };
+    const { ui, calls } = fakeUi();
+    applySessionStartStatus({
+      ui,
+      runtime: rt,
+      trajectoriesOn: true,
+      sessionModelId: "anthropic-sonnet-4",
+    });
+    expect(calls).toEqual([
+      { key: "llm-wiki", value: undefined },
+      { key: MODEL_STATUS_KEY, value: undefined },
+    ]);
+  });
+
+  // A hidden line stays hidden with `notices` off as well.
+  it("clears the badge even with notices: false, and still sets the model line", () => {
+    const rt = new Runtime();
+    rt.config = { notices: false, statusBadge: false };
+    const { ui, calls } = fakeUi();
+    applySessionStartStatus({
+      ui,
+      runtime: rt,
+      trajectoriesOn: false,
+      sessionModelId: "anthropic-sonnet-4",
+    });
+    expect(calls).toEqual([
+      { key: "llm-wiki", value: undefined },
+      { key: MODEL_STATUS_KEY, value: "🧠 wiki model: session model (anthropic-sonnet-4)" },
+    ]);
+  });
+});
+
+describe("statusBadgeEnabled / statusModelEnabled (footer opt-outs)", () => {
+  it("default to true when unset", () => {
+    expect(statusBadgeEnabled(undefined)).toBe(true);
+    expect(statusBadgeEnabled({})).toBe(true);
+    expect(statusModelEnabled(undefined)).toBe(true);
+    expect(statusModelEnabled({})).toBe(true);
+  });
+
+  it("honor an explicit boolean", () => {
+    expect(statusBadgeEnabled({ statusBadge: false })).toBe(false);
+    expect(statusBadgeEnabled({ statusBadge: true })).toBe(true);
+    expect(statusModelEnabled({ statusModel: false })).toBe(false);
+    expect(statusModelEnabled({ statusModel: true })).toBe(true);
+  });
+
+  it("answer independently of each other", () => {
+    expect(statusBadgeEnabled({ statusBadge: false, statusModel: true })).toBe(false);
+    expect(statusModelEnabled({ statusBadge: false, statusModel: true })).toBe(true);
+  });
+});
+
+describe("loadTaskConfig parses the per-line status settings", () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = join(import.meta.dirname, "..", "tmp", `status-${Date.now()}-${Math.random()}`);
+    mkdirSync(join(tmpDir, ".pi"), { recursive: true });
+  });
+  afterEach(() => rmSync(tmpDir, { recursive: true, force: true }));
+
+  it("reads both from project settings", () => {
+    writeFileSync(
+      join(tmpDir, ".pi", "settings.json"),
+      JSON.stringify({ "llm-wiki": { statusBadge: false, statusModel: false } }),
+    );
+    const cfg = loadTaskConfig(tmpDir);
+    expect(cfg.statusBadge).toBe(false);
+    expect(cfg.statusModel).toBe(false);
+    // The transcript setting keeps its default.
+    expect(noticesEnabled(cfg)).toBe(true);
+  });
+
+  it("ignores non-boolean values", () => {
+    writeFileSync(
+      join(tmpDir, ".pi", "settings.json"),
+      JSON.stringify({ "llm-wiki": { statusBadge: "no", statusModel: 0 } }),
+    );
+    const cfg = loadTaskConfig(tmpDir);
+    expect(cfg.statusBadge).toBeUndefined();
+    expect(cfg.statusModel).toBeUndefined();
   });
 });
 

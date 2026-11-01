@@ -65,7 +65,9 @@ All of the above are viewable and editable in the `/wiki-settings` TUI (persists
 | `synthesisMaxTokens`     | 16384    | Max output tokens for ingest/synthesis runs (stored as a plain number)                        |
 | `wikilinkValidation`   | warn       | Pre-write wikilink gate for page writes (ingest, `wiki_ensure_page`, `wiki_retro`, MCP `wiki_retro`). `off` ignore, `warn` report, `normalize` rewrite resolvable links, `strict` block writes with unresolved/ambiguous links |
 | `trajectories`         | false      | Enable agent-trajectory working-memory                       |
-| `notices`              | true       | Show wiki activity notices in chat                           |
+| `notices`              | true       | Show wiki notices in the transcript (session notice, reminders, task reports)              |
+| `statusBadge`          | true       | Footer line reporting the wiki is loaded, with the recall-count rewrite sharing its slot   |
+| `statusModel`          | true       | Footer line naming the background task model                                                |
 | `ambientPersonalVault` | host-dependent | Let the personal vault act as the ambient vault in projects that have no wiki. `true` under pi, `false` under oh-my-pi — see below. |
 | `semanticWeight`       | 0.5      | Weight of the semantic sub-score in hybrid recall (clamped 0–1)                               |
 | `recallLinksThreshold` | 50       | Page-count gate for two-stage links-first recall (0 = always links-first, issue #68)          |
@@ -79,6 +81,23 @@ All of the above are viewable and editable in the `/wiki-settings` TUI (persists
 `taskModelBaseUrl`, `taskModelApiKey`, and `taskModelApiKeyEnv` are additive
 settings for the MCP host's synchronous ingest lane. Pi still resolves its
 session model through the host's model registry.
+
+#### Footer status lines
+
+The wiki holds two slots in the footer.  The one named `llm-wiki` carries the line
+reporting that a wiki is loaded and how many tools are live, and is rewritten on
+each turn that recall matches pages to say how many.  The one named
+`llm-wiki-model` carries the line naming the model that background tasks run on.
+`statusBadge` and `statusModel` decide them, and both default to on.
+
+The footer row is shared with other extensions and a line that does not fit is
+clipped mid-word, so each line can be dropped on its own.  `statusBadge` covers the
+whole `llm-wiki` slot, recall count included.
+
+The one-shot setup and integrity messages — first-run creation, blocked setup, a
+repaired doubled layout — always send a transcript notice, and write the footer slot
+as well while `statusBadge` allows it.  For the routine transcript surfaces, see
+`notices`.
 
 Example:
 

@@ -10,7 +10,12 @@ import {
   Text,
 } from "@earendil-works/pi-tui";
 import type { Runtime } from "./runtime.js";
-import { parseModelRef, persistTaskModel, type TaskConfig } from "./task-config.js";
+import {
+  parseModelRef,
+  persistTaskModel,
+  statusModelEnabled,
+  type TaskConfig,
+} from "./task-config.js";
 
 /**
  * Model selection surface for the wiki background lane (issue #69, epic #63).
@@ -203,7 +208,12 @@ export function registerWikiModelCommand(pi: ExtensionAPI, runtime: Runtime): vo
         persistTaskModel(ctx.cwd, model);
         runtime.config = { ...runtime.config, taskModel: model };
         const label = formatActiveModelLabel(runtime.config, sessionId);
-        ctx.ui.setStatus(MODEL_STATUS_KEY, `🧠 wiki model: ${label}`);
+        // The model was picked by the user, so report it in the transcript.
+        // The footer line is written when `llm-wiki.statusModel` allows it.
+        ctx.ui.setStatus(
+          MODEL_STATUS_KEY,
+          statusModelEnabled(runtime.config) ? `🧠 wiki model: ${label}` : undefined,
+        );
         ctx.ui.notify(`LLM Wiki: background tasks now use ${label}`, "info");
       };
 

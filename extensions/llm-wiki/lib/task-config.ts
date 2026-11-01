@@ -106,14 +106,27 @@ export interface TaskConfig {
   recallSkillInlineMax?: number;
 
   /**
-   * Surface wiki activity in the UI (issue #77). When enabled (the default),
-   * the status line reflects recall hits and the periodic observe/retro
-   * reminder is shown to the user (`display: true`) instead of being injected
-   * silently. Set to `false` to restore the previous quiet behavior — a static
-   * status line and a hidden (`display: false`) reminder — for users who do
-   * not want any chat-level wiki notices.
+   * Show wiki notices in the transcript (issue #77): the session notice, the
+   * periodic observe/retro reminder, and background task reports.  With it off,
+   * the reminder still reaches model context and every tool still works.  Footer
+   * output is decided by {@link statusBadge}, not here, and the one-off setup
+   * and integrity messages are sent whichever way this setting stands.
    */
   notices?: boolean;
+
+  /**
+   * Show the footer line reporting that the wiki is loaded, and let recall
+   * counts replace it as they arrive (status key `llm-wiki`).  Default `true`.
+   * The footer row is shared with other extensions and a line that does not fit
+   * is clipped mid-word.
+   */
+  statusBadge?: boolean;
+
+  /**
+   * Show the footer line naming the model background wiki tasks run on (status
+   * key `llm-wiki-model`).  Default `true`.
+   */
+  statusModel?: boolean;
 
   /**
    * Run automatic recall injection in the `before_agent_start` hook — the
@@ -204,6 +217,22 @@ export const TASK_DEFAULTS: TaskConfig = {};
  */
 export function noticesEnabled(config: TaskConfig | undefined): boolean {
   return config?.notices !== false;
+}
+
+/**
+ * Resolve whether the `llm-wiki` footer line is written, recall counts included.
+ * Defaults to `true`.
+ */
+export function statusBadgeEnabled(config: TaskConfig | undefined): boolean {
+  return config?.statusBadge !== false;
+}
+
+/**
+ * Resolve whether the `llm-wiki-model` footer line is written.  Defaults to
+ * `true`.
+ */
+export function statusModelEnabled(config: TaskConfig | undefined): boolean {
+  return config?.statusModel !== false;
 }
 
 /**
@@ -312,6 +341,14 @@ function readNamespacedConfig(path: string): Partial<TaskConfig> {
 
     if (typeof section.notices === "boolean") {
       out.notices = section.notices;
+    }
+
+    if (typeof section.statusBadge === "boolean") {
+      out.statusBadge = section.statusBadge;
+    }
+
+    if (typeof section.statusModel === "boolean") {
+      out.statusModel = section.statusModel;
     }
 
     if (typeof section.autoRecall === "boolean") {
@@ -538,6 +575,8 @@ const KNOWN_KEYS = [
   "recallLinksThreshold",
   "recallSkillInlineMax",
   "notices",
+  "statusBadge",
+  "statusModel",
   "autoRecall",
   "ambientPersonalVault",
   "trajectories",

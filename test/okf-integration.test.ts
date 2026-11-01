@@ -415,6 +415,7 @@ describe("OKF integration", () => {
     const config = JSON.stringify({ name: "Existing", knowledge_format: "legacy" });
     writeFileSync(join(paths.dotWiki, "config.json"), config);
     const statuses: string[] = [];
+    const notes: string[] = [];
     const harness = registerFullExtensionHarness(root);
     await harness.emit(
       "session_start",
@@ -422,20 +423,24 @@ describe("OKF integration", () => {
       {
         cwd: root,
         hasUI: true,
-        ui: { setStatus: (_key: string, value: string) => statuses.push(value) },
+        ui: {
+          setStatus: (_key: string, value: string) => statuses.push(value),
+          notify: (message: string) => notes.push(message),
+        },
         model: { id: "test" },
       },
     );
     expect(readFileSync(join(paths.dotWiki, "config.json"), "utf8")).toBe(config);
     expect(existsSync(join(paths.meta, "events.jsonl"))).toBe(false);
     expect(statuses.some((status) => status.includes("setup blocked"))).toBe(false);
+    expect(notes.some((note) => note.includes("setup blocked"))).toBe(false);
     expect(harness.messages.length).toBeGreaterThan(0);
     // Drain the fire-and-forget qmd-recovery task before the vault is removed
     // in teardown; otherwise it warns about the deleted index directory.
     await harness.emit("session_shutdown");
   });
 
-  it("blocks an existing invalid vault before status notices or lifecycle writes", async () => {
+  it("blocks an existing invalid vault before setup notices or lifecycle writes", async () => {
     const root = join(import.meta.dirname, "..", "tmp", `okf-blocked-${Date.now()}`);
     vaultRoots.push(root);
     const paths = getVaultPaths(root);
@@ -443,6 +448,7 @@ describe("OKF integration", () => {
     const config = JSON.stringify({ knowledge_format: "future" });
     writeFileSync(join(paths.dotWiki, "config.json"), config);
     const statuses: string[] = [];
+    const notes: string[] = [];
     const harness = registerFullExtensionHarness(root);
     await harness.emit(
       "session_start",
@@ -450,11 +456,15 @@ describe("OKF integration", () => {
       {
         cwd: root,
         hasUI: true,
-        ui: { setStatus: (_key: string, value: string) => statuses.push(value) },
+        ui: {
+          setStatus: (_key: string, value: string) => statuses.push(value),
+          notify: (message: string) => notes.push(message),
+        },
         model: { id: "test" },
       },
     );
     expect(statuses.some((status) => status.includes("setup blocked"))).toBe(true);
+    expect(notes.some((note) => note.includes("setup blocked"))).toBe(true);
     expect(harness.messages).toEqual([]);
     expect(readFileSync(join(paths.dotWiki, "config.json"), "utf8")).toBe(config);
     expect(existsSync(join(paths.meta, "events.jsonl"))).toBe(false);
@@ -475,7 +485,12 @@ describe("OKF integration", () => {
       await harness.emit(
         "session_start",
         {},
-        { cwd: root, hasUI: true, ui: { setStatus: () => {} }, model: { id: "test" } },
+        {
+          cwd: root,
+          hasUI: true,
+          ui: { setStatus: () => {}, notify: () => {} },
+          model: { id: "test" },
+        },
       );
       await harness.emit("session_shutdown");
     } finally {

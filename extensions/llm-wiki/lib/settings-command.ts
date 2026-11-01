@@ -18,6 +18,7 @@ import {
   type SettingScope,
   trajectoriesEnabled,
 } from "./task-config.js";
+import { applySessionStartStatus } from "./visible-status.js";
 
 /**
  * Settings TUI for LLM Wiki.
@@ -41,6 +42,8 @@ import {
 interface Ui {
   select(title: string, options: string[]): Promise<string | undefined>;
   notify(message: string, type?: "info" | "warning" | "error"): void;
+  /** Footer status slot. `undefined` clears it. */
+  setStatus(key: string, text: string | undefined): void;
   /** Hosts that can render a focused custom component (pi ≥ 0.70 interactive). */
   custom?(
     factory: (
@@ -117,6 +120,24 @@ const SETTINGS: SettingDef[] = [
     label: "Notices",
     type: "boolean",
     hint: "Show wiki recall/observation notice lines in chat.",
+    format: (v) => (v != null ? (v ? "ON" : "OFF") : "ON (default)"),
+    toEdit: () => "",
+    parse: (input) => Boolean(Boolean(input) && /on|true|1/i.test(input)),
+  },
+  {
+    key: "statusBadge",
+    label: "Status: Wiki",
+    type: "boolean",
+    hint: "Footer line saying the wiki is loaded. Also holds the recall-count rewrite.",
+    format: (v) => (v != null ? (v ? "ON" : "OFF") : "ON (default)"),
+    toEdit: () => "",
+    parse: (input) => Boolean(Boolean(input) && /on|true|1/i.test(input)),
+  },
+  {
+    key: "statusModel",
+    label: "Status: Model",
+    type: "boolean",
+    hint: "Footer line naming the background task model.",
     format: (v) => (v != null ? (v ? "ON" : "OFF") : "ON (default)"),
     toEdit: () => "",
     parse: (input) => Boolean(Boolean(input) && /on|true|1/i.test(input)),
@@ -370,7 +391,12 @@ const OVERLAY_OPTS = {
   overlayOptions: { anchor: "center", width: "92%", maxHeight: "95%" },
 };
 
-async function showSettingsTui(ui: Ui, cwd: string, scope: SettingScope): Promise<void> {
+async function showSettingsTui(
+  ui: Ui,
+  cwd: string,
+  scope: SettingScope,
+  refreshStatus?: () => void,
+): Promise<void> {
   if (typeof ui.custom !== "function") {
     ui.notify(
       "LLM Wiki: this host does not support the settings screen. Edit settings.json directly.",
@@ -436,6 +462,9 @@ async function showSettingsTui(ui: Ui, cwd: string, scope: SettingScope): Promis
         // Normalize the displayed value in place (e.g. cleared model shows
         // "(session model)"; "0.50" becomes "0.5").
         list.updateValue(id, def.format(value));
+        // The footer lines are derived from the settings just written, so
+        // recompute them and a toggle takes effect without a reload.
+        if (def.key === "statusBadge" || def.key === "statusModel") refreshStatus?.();
         // trajectories gates tool registration at startup, so a live toggle
         // cannot add/remove the 3 tools mid-session \u2014 say so on real changes.
         if (def.key === "trajectories") {
@@ -461,7 +490,10 @@ async function showSettingsTui(ui: Ui, cwd: string, scope: SettingScope): Promis
 export function registerWikiSettingsCommand(pi: ExtensionAPI, runtime: Runtime): void {
   pi.registerCommand("wiki-settings", {
     description: "View and edit LLM Wiki settings (model, tokens, behaviors, embeddings)",
-    handler: async (_args: string, ctx: { cwd: string; hasUI: boolean; ui: Ui }) => {
+    handler: async (
+      _args: string,
+      ctx: { cwd: string; hasUI: boolean; ui: Ui; model?: { id?: string } },
+    ) => {
       runtime.ensureConfig(ctx.cwd);
 
       if (!ctx.hasUI) {
@@ -484,7 +516,15 @@ export function registerWikiSettingsCommand(pi: ExtensionAPI, runtime: Runtime):
         scope = pick.startsWith("Project") ? "project" : "global";
       }
 
-      await showSettingsTui(ctx.ui, ctx.cwd, scope);
+      await showSettingsTui(ctx.ui, ctx.cwd, scope, () => {
+        runtime.ensureConfig(ctx.cwd);
+        applySessionStartStatus({
+          ui: ctx.ui,
+          runtime,
+          trajectoriesOn: trajectoriesEnabled(runtime.config),
+          sessionModelId: ctx.model?.id,
+        });
+      });
     },
   });
 }
